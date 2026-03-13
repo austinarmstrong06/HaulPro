@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Trucking Ops & Cost Calculator — All Roads (v7.6.7 no-dark PWA)</title>
+  <!-- PWA hooks -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#1b5cff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Trucking Calc">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <style>
+    :root{ --bg:#f4f6f8; --card:#fff; --ink:#111; --muted:#445; --brand:#1b5cff; --ok:#0a7a2f; --warn:#b23; --line:#e6e9ef; --accent:#ffb74d; }
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+    .container{max-width:1100px;margin:auto;padding:16px}
+    .card{background:var(--card);border-radius:12px;padding:18px;box-shadow:0 10px 24px rgba(0,0,0,.08);border:1px solid var(--line)}
+    h1{margin:0 0 0 0;font-size:1.35rem}
+    .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
+    .col-6{grid-column:span 6} .col-4{grid-column:span 4} .col-3{grid-column:span 3} .col-8{grid-column:span 8} .col-12{grid-column:span 12}
+    @media (max-width:880px){ .col-6,.col-4,.col-3,.col-8{grid-column:span 12} }
+    label{font-weight:700;font-size:.92rem}
+    .help{color:var(--muted);font-size:.8rem;margin-top:4px}
+    input,select,button{width:100%;padding:10px 12px;margin-top:6px;font-size:16px; /* iOS anti-zoom */
+      background:transparent;color:var(--ink);border:1px solid var(--line);border-radius:8px;outline:none;min-height:44px}
+    input:focus,select:focus,textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(27,92,255,.15)}
+    .inline-note{margin-top:6px;font-size:.85rem;color:var(--brand);font-weight:700}
+    .section-title{margin-top:4px;font-weight:800;color:var(--muted);letter-spacing:.02em}
+    .results{margin-top:14px;padding:14px;border-radius:10px;background:rgba(27,92,255,.06)}
+    .grand{background:linear-gradient(0deg, rgba(27,92,255,.12), rgba(27,92,255,.12));border:1px dashed var(--brand)}
+    .totals{background:linear-gradient(0deg, rgba(255,183,77,.18), rgba(255,183,77,.18));border:1px dashed var(--accent)}
+    .rowline{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line);padding:8px 0}
+    .rowline:last-child{border-bottom:none}
+    .label{color:var(--muted)}
+    .value{font-weight:800}
+    .block-title{font-weight:800;color:var(--muted);margin:8px 0 4px 0;letter-spacing:.02em}
+    .hero{display:inline-block;padding:6px 10px;border-radius:8px;background:#fff;border:1px solid var(--line);font-weight:900;color:var(--brand)}
+    .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    button{cursor:pointer}
+    .right{display:flex;gap:10px;align-items:center}
+    .footnote{font-size:.8rem;color:var(--muted);margin-top:6px}
+    .tbl { width:100%; border-collapse: collapse; }
+    .tbl thead th { text-align:left; font-weight:800; border-bottom:2px solid var(--line); padding:8px 6px; }
+    .tbl td { border-bottom:1px solid var(--line); padding:8px 6px; vertical-align:top; }
+    .subline { color:var(--muted); font-size:.8rem; }
+    .good { background: rgba(10, 122, 47, 0.08); }
+    .mutedRow { opacity: 0.95; }
+  </style>
+</head>
+<body>
+  <div class="container" id="app">
+    <div class="card" id="mainView">
+      <div class="grid">
+        <div class="col-12" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <div class="topbar-left">
+            <h1>Trucking Ops & Cost Calculator</h1>
+          </div>
+          <div class="right">
+            <button id="editDataBtn" title="Edit materials, trucks, typical rates">Edit Data</button>
+            <button id="resetBtn" title="Reset to defaults">Reset</button>
+          </div>
+        </div>
+
+        <div class="col-12 section-title">MATERIAL COSTS</div>
+        <div class="col-6">
+          <label for="material">Material Type</label>
+          <select id="material"></select>
+          <div class="inline-note" id="materialInfo">Density: — t/m³</div>
+        </div>
+        <div class="col-3">
+          <label for="quantity">Est. Qty (t)</label>
+          <input id="quantity" type="number" min="1" step="1" value="1000" />
+        </div>
+        <div class="col-3">
+          <label for="materialRate">Cost of Material — FOB ($/t)</label>
+          <input id="materialRate" type="number" min="0" step="0.01" value="0" />
+        </div>
+        <div class="col-12 results totals" id="materialTotals"></div>
+
+        <div class="col-12 section-title">TRUCKING SETUP</div>
+        <div class="col-6">
+          <label for="truck">Truck Type (active selection)</label>
+          <select id="truck"></select>
+          <div class="inline-note" id="truckInfo">Capacity: — m³</div>
+        </div>
+        <div class="col-3">
+          <label for="haulRate">Haul Rate ($/hr per truck)</label>
+          <input id="haulRate" type="number" min="0" step="1" value="120" />
+          <div class="help">Active Trucking Costs use this rate. Comparison table uses typical per‑truck rates from Edit Data.</div>
+        </div>
+        <div class="col-3">
+          <label for="haulTime">Haul Duration — Round Trip (hrs/load)</label>
+          <input id="haulTime" type="number" min="0.1" step="0.1" value="1.0" />
+        </div>
+        <div class="col-3">
+          <label for="turnTime">Load/Unload Duration (min)</label>
+          <input id="turnTime" type="number" min="0" step="5" value="15" />
+          <div class="help">Cycle Time = Haul + 2 × (Load/Unload ÷ 60).</div>
+        </div>
+        <div class="col-3">
+          <label for="firstLoad">First Load On Site</label>
+          <input id="firstLoad" type="time" value="07:00" />
+        </div>
+        <div class="col-3">
+          <label for="lastLoad">Last Load On Site</label>
+          <input id="lastLoad" type="time" value="16:00" />
+        </div>
+        <div class="col-3">
+          <label for="jobDays">Target Job Duration (days)</label>
+          <input id="jobDays" type="number" min="1" step="1" value="1" />
+        </div>
+
+        <div class="col-12 results" id="productionSummary"></div>
+
+        <div class="col-12 section-title">TRUCK TYPE COMPARISON</div>
+        <div class="col-12 results" id="compare"></div>
+        <div class="col-12" id="compareActions" style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
+          <button id="useBestCost">Use lowest total cost</button>
+          <button id="useFewestTrucks">Use fewest trucks</button>
+        </div>
+
+        <div class="col-12 results" id="truckingCosts"></div>
+
+        <div class="col-12 section-title">DUMPING FEES</div>
+        <div class="col-3">
+          <label for="dumpFee">Dump Fee ($/load)</label>
+          <input id="dumpFee" type="number" min="0" step="1" value="0" />
+        </div>
+        <div class="col-12 results" id="dumpingSummary"></div>
+
+        <div class="col-12 section-title">DISPATCH SUMMARY</div>
+        <div class="col-12 results" id="dispatchSummary"></div>
+
+        <div class="col-12 section-title">FINAL COST SUMMARY</div>
+        <div class="col-12 results grand" id="grandTotals"></div>
+
+        <div class="col-12">
+          <div class="btns">
+            <button class="primary" id="printBtn">Print / Save PDF</button>
+            <button id="copyBtn">Copy Summary</button>
+            <button id="shareBtn">Share Link</button>
+          </div>
+          <div class="footnote">Loads are rounded for dump billing. Truck hours/costs use exact loads for accuracy. If Last < First, the work window crosses midnight.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card editor" id="editorView" style="display:none">
+      <div class="toolbar">
+        <button id="backBtn" title="Back to calculator">← Back</button>
+        <h2 style="margin:0">Edit Default Data</h2>
+        <span class="small">These settings are saved in your browser.</span>
+      </div>
+
+      <div class="two-col" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="panel" style="border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--card)">
+          <h3>Materials</h3>
+          <table class="tbl" id="materialsTable">
+            <thead><tr><th>Material Name</th><th>Density (t/m³)</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="help">Add or edit materials. Leave blank rows if not needed.</div>
+        </div>
+        <div class="panel" style="border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--card)">
+          <h3>Trucks</h3>
+          <table class="tbl" id="trucksTable">
+            <thead><tr><th>Truck Name</th><th>Capacity (m³)</th><th>Typical $/hr</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="help">Edit capacities and typical hourly rates. These rates drive the comparison table.</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button id="saveDataBtn" class="primary">Save & Apply</button>
+        <button id="resetDataBtn">Reset to All Roads Defaults</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const safeClone = (obj)=> JSON.parse(JSON.stringify(obj));
+
+  const DEFAULTS = {
+    materials: [
+      { name:"25mm Roadbase", density:2.35 },
+      { name:"19mm Roadbase", density:2.35 },
+      { name:"75mm Roadbase", density:2.35 },
+      { name:"19mm Clear Crush", density:2.35 },
+      { name:"Spoil", density:2.35 },
+      { name:"Asphalt", density:2.45 },
+      { name:"Topsoil", density:2.35 }
+    ],
+    trucks: [
+      { name:"Tandem", volume:7,   rate:110 },
+      { name:"Truck & Transfer", volume:17, rate:140 },
+      { name:"Tridem", volume:9,    rate:120 },
+      { name:"Tri-Tri", volume:18,  rate:150 },
+      { name:"Trailer Pup", volume:4.2, rate:100 },
+      { name:"Tridem Pup", volume:6, rate:105 }
+    ]
+  };
+
+  const DATA_KEY = 'truck_calc_data_allroads_v767_nodark';
+  const STATE_KEY = 'truck_calc_state_allroads_v767_nodark';
+
+  function loadData(){ try { return JSON.parse(localStorage.getItem(DATA_KEY)) || safeClone(DEFAULTS); } catch(e){ return safeClone(DEFAULTS); } }
+  function saveData(data){ try { localStorage.setItem(DATA_KEY, JSON.stringify(data)); } catch(e){} }
+
+  const $ = id => document.getElementById(id);
+  const els = {
+    app: $("app"), mainView: $("mainView"), editorView: $("editorView"), editDataBtn: $("editDataBtn"), backBtn: $("backBtn"),
+    material: $("material"), truck: $("truck"), quantity: $("quantity"), materialRate: $("materialRate"),
+    haulTime: $("haulTime"), turnTime: $("turnTime"), jobDays: $("jobDays"), haulRate: $("haulRate"),
+    dumpFee: $("dumpFee"), firstLoad: $("firstLoad"), lastLoad: $("lastLoad"),
+    materialTotals: $("materialTotals"), productionSummary: $("productionSummary"), compare: $("compare"), truckingCosts: $("truckingCosts"), dumpingSummary: $("dumpingSummary"), dispatchSummary: $("dispatchSummary"), grandTotals: $("grandTotals"),
+    resetBtn: $("resetBtn"), printBtn: $("printBtn"), copyBtn: $("copyBtn"), shareBtn: $("shareBtn"),
+    truckInfo: $("truckInfo"), materialInfo: $("materialInfo"), useBestCost: $("useBestCost"), useFewestTrucks: $("useFewestTrucks"),
+    materialsTable: $("materialsTable"), trucksTable: $("trucksTable"), saveDataBtn: $("saveDataBtn"), resetDataBtn: $("resetDataBtn")
+  };
+
+  let DATA = loadData();
+
+  function fillSelect(sel, items, valueKey, labelKey, defIndex){ sel.innerHTML=''; items.forEach((d,i)=>{ const o=document.createElement('option'); o.value=d[valueKey]; o.textContent=d[labelKey]; if(i===defIndex) o.selected=true; sel.appendChild(o); }); }
+  function refreshSelects(){ fillSelect(els.material, DATA.materials, 'density', 'name', Math.min(1, DATA.materials.length-1)); fillSelect(els.truck, DATA.trucks, 'volume', 'name', Math.min(2, DATA.trucks.length-1)); updateInlineNotes(); }
+
+  function saveState(){ const keys=['material','truck','quantity','materialRate','haulTime','turnTime','haulRate','dumpFee','firstLoad','lastLoad','jobDays']; const s={}; keys.forEach(k=> s[k]=els[k].value); try{ localStorage.setItem(STATE_KEY, JSON.stringify(s)); }catch(e){} }
+  function loadState(){ try{ const s = JSON.parse(localStorage.getItem(STATE_KEY)||'{}'); Object.keys(s).forEach(k=>{ if(els[k]) els[k].value=s[k]; }); }catch(e){} }
+
+  function updateInlineNotes(){ const d=parseFloat(els.material.value), v=parseFloat(els.truck.value); els.materialInfo.textContent = `Density: ${isFinite(d)?d.toFixed(2):'-'} t/m³`; els.truckInfo.textContent = `Capacity: ${isFinite(v)?v.toFixed(1):'-'} m³`; }
+  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+  function asNum(el, def=0){ const n=parseFloat(el.value); return isFinite(n)?n:def; }
+  function hrMinToHours(m){ return (m||0)/60; }
+  function fmtMoney(n){ return "$"+(isFinite(n)? n.toLocaleString(undefined,{maximumFractionDigits:2,minimumFractionDigits:2}):'0.00'); }
+  function ceil(n){ return Math.ceil(n); }
+  function parseHM(str){ if(!str||str.indexOf(':')<0) return 0; const [h,m]=str.split(':').map(x=>parseInt(x,10)); if(!isFinite(h)||!isFinite(m)) return 0; return h + m/60; }
+  function workWindowHours(aStr, bStr){ let a=parseHM(aStr), b=parseHM(bStr); let h=b-a; if(h<0) h+=24; return clamp(h,0,24); }
+
+  function buildShared(){
+    const density=asNum(els.material,2.35), qtyT=asNum(els.quantity,0), matRate=Math.max(0, asNum(els.materialRate,0));
+    const haulHrs=asNum(els.haulTime,0), turnMin=asNum(els.turnTime,0), jobDays=Math.max(1, Math.round(asNum(els.jobDays,1)));
+    const workHrs = workWindowHours(els.firstLoad.value, els.lastLoad.value);
+    const cycleHrs = haulHrs + 2 * hrMinToHours(turnMin); // doubled load/unload
+    return { density, qtyT, matRate, jobDays, workHrs, cycleHrs };
+  }
+
+  function computeRow(volume, rate, shared){
+    const tonnesPerLoad = shared.density * volume;
+    const exactLoads    = shared.qtyT / (tonnesPerLoad||Infinity);
+    const loadsPerTruckPerDay = shared.cycleHrs > 0 ? (shared.workHrs / shared.cycleHrs) : 0;
+    const tPerTruckPerDay     = loadsPerTruckPerDay * tonnesPerLoad;
+    const dailyTarget  = shared.qtyT / shared.jobDays;
+    const trucksReq    = tPerTruckPerDay > 0 ? Math.ceil(dailyTarget / tPerTruckPerDay) : 0;
+    const totalTruckHours = exactLoads * shared.cycleHrs;
+    const haulCost        = totalTruckHours * rate;
+    const materialCost    = shared.qtyT * shared.matRate;
+    const totalCost       = materialCost + haulCost;
+    const costPerT        = shared.qtyT > 0 ? (totalCost / shared.qtyT) : 0;
+    return { tonnesPerLoad, trucksReq, tPerTruckPerDay, totalTruckHours, haulCost, totalCost, costPerT };
+  }
+
+  function renderComparison(){
+    const shared = buildShared();
+    const userRate = Math.max(0, asNum(els.haulRate,0));
+    const activeIdx = Math.max(0, els.truck.selectedIndex);
+    const activeTruck = DATA.trucks[activeIdx] || {name:'—', volume:0, rate:userRate};
+
+    const userMetrics = computeRow(activeTruck.volume, userRate, shared);
+    const rows = [{ label: `${activeTruck.name} (user)`, rate: userRate, volume: activeTruck.volume, ...userMetrics, kind:'user' }];
+    DATA.trucks.forEach(tr =>{ const r = Math.max(0, parseFloat(tr.rate)||0); const m=computeRow(tr.volume, r, shared); rows.push({ label:`${tr.name} (typ.)`, rate:r, volume: tr.volume, ...m, kind:'typ' }); });
+
+    const validTrucks = rows.filter(r => isFinite(r.trucksReq) && r.trucksReq>0);
+    const validTotals = rows.filter(r => isFinite(r.totalCost));
+    const minTrucks = validTrucks.length ? Math.min(...validTrucks.map(r => r.trucksReq)) : null;
+    const minTotal  = validTotals.length ? Math.min(...validTotals.map(r => r.totalCost)) : null;
+
+    const userRow = rows.shift();
+    const sortedTyp = rows.sort((a,b)=> (a.totalCost||Infinity) - (b.totalCost||Infinity));
+    const finalRows = [userRow, ...sortedTyp];
+
+    const tableHTML = `
+      <div class="block-title">TRUCK TYPE COMPARISON</div>
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Truck</th>
+            <th>Cap. (m³)</th>
+            <th>t / Load</th>
+            <th>Trucks<br>Required</th>
+            <th>Prod / Truck / Day (t)</th>
+            <th>Total Truck Hours</th>
+            <th>Haul Rate</th>
+            <th>Hauling Cost</th>
+            <th>Total Cost<br><span class="subline">($/t in subline)</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${finalRows.map(r=>`
+            <tr class="${(minTrucks!==null && r.trucksReq===minTrucks) || (minTotal!==null && r.totalCost===minTotal) ? 'good' : ''} ${r.kind==='typ'?'mutedRow':''}">
+              <td>${r.label}</td>
+              <td>${isFinite(r.volume)?r.volume.toFixed(1):'—'}</td>
+              <td>${isFinite(r.tonnesPerLoad)?r.tonnesPerLoad.toFixed(2):'—'}</td>
+              <td><strong>${isFinite(r.trucksReq)?r.trucksReq:'—'}</strong></td>
+              <td>${isFinite(r.tPerTruckPerDay)?r.tPerTruckPerDay.toFixed(1):'—'}</td>
+              <td>${isFinite(r.totalTruckHours)?r.totalTruckHours.toFixed(0):'—'}</td>
+              <td>$${isFinite(r.rate)?r.rate.toFixed(2):'—'}/hr</td>
+              <td>${fmtMoney(r.haulCost)}</td>
+              <td><strong>${fmtMoney(r.totalCost)}</strong><div class="subline">$${isFinite(r.costPerT)?r.costPerT.toFixed(2):'0.00'}/t</div></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      <div class="help" style="margin-top:6px">First row uses your <strong>Trucking Setup</strong> rate (user). Other rows use <strong>typical per‑truck $/hr</strong> from <em>Edit Data</em>. Cycle uses Haul + 2 × (Load/Unload).</div>
+    `;
+
+    els.compare.innerHTML = tableHTML;
+
+    const bestCost = finalRows.reduce((a,b)=> (a.totalCost||Infinity) <= (b.totalCost||Infinity) ? a : b, finalRows[0]||{});
+    const fewest   = finalRows.reduce((a,b)=> (a.trucksReq||Infinity) <= (b.trucksReq||Infinity) ? a : b, finalRows[0]||{});
+    els.useBestCost.onclick = ()=>{ const target=bestCost; const opt=[...els.truck.options].find(o=> parseFloat(o.value)===parseFloat(target.volume)); if(opt){ els.truck.value=opt.value; } if(target.kind==='typ' && isFinite(target.rate)) els.haulRate.value = target.rate.toFixed(2); calculate(); };
+    els.useFewestTrucks.onclick = ()=>{ const target=fewest; const opt=[...els.truck.options].find(o=> parseFloat(o.value)===parseFloat(target.volume)); if(opt){ els.truck.value=opt.value; } if(target.kind==='typ' && isFinite(target.rate)) els.haulRate.value = target.rate.toFixed(2); calculate(); };
+  }
+
+  // Clipboard/share fallbacks (iOS-safe)
+  async function copyText(text){
+    try{
+      if(navigator.clipboard?.writeText){ await navigator.clipboard.writeText(text); alert('Copied to clipboard'); }
+      else {
+        const ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+        document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); alert('Copied to clipboard');
+      }
+    }catch(e){ alert('Copy failed — long press to select text.'); }
+  }
+  function shareLink(url){
+    if(navigator.share){ navigator.share({title:'Trucking Ops & Cost Calc', url}).catch(()=>{}); }
+    else { copyText(url); }
+  }
+
+  function calculate(){
+    const shared = buildShared();
+
+    const activeIdx = Math.max(0, els.truck.selectedIndex);
+    const activeTruck = DATA.trucks[activeIdx] || {name:'—', volume:0};
+    const activeTruckName = (els.truck.options[els.truck.selectedIndex]||{}).text || '—';
+    const activeMaterial  = (els.material.options[els.material.selectedIndex]||{}).text || '—';
+    const userRate = Math.max(0, asNum(els.haulRate,0));
+
+    const density=shared.density, volume=activeTruck.volume, qtyT=shared.qtyT, matRate=shared.matRate;
+    const workHrs=shared.workHrs, cycleHrs=shared.cycleHrs;
+
+    const tonnesPerTruck=density*volume;
+    const exactLoads = volume>0 ? (qtyT/tonnesPerTruck) : 0;
+    const loadsRounded = ceil(exactLoads);
+
+    const loadsPerTruckPerDay = cycleHrs>0 ? (workHrs/cycleHrs) : 0;
+    const tonnesPerTruckPerDay = loadsPerTruckPerDay*tonnesPerTruck;
+
+    const dailyTargetT = shared.jobDays>0 ? (qtyT / shared.jobDays) : 0;
+    const trucksReqExact = tonnesPerTruckPerDay>0 ? (dailyTargetT/tonnesPerTruckPerDay) : Infinity;
+    const trucksRequired = Math.max(0, Math.ceil(trucksReqExact));
+
+    const totalTruckHours = exactLoads * cycleHrs;
+    const haulCost = totalTruckHours * userRate;
+
+    const dumpFee = Math.max(0, asNum(els.dumpFee,0));
+    const totalDumpFees = loadsRounded * dumpFee;
+
+    const totalMaterialCost = qtyT * matRate;
+    const grandTotal = totalMaterialCost + haulCost + totalDumpFees;
+
+    els.materialTotals.innerHTML = `<div class="rowline"><div class="label">TOTAL MATERIAL COST</div><div class="value">${fmtMoney(totalMaterialCost)}</div></div>`;
+
+    const titleSuffix = `(${activeTruckName} · $${userRate.toFixed(2)}/hr · ${activeMaterial})`;
+    els.productionSummary.innerHTML = `
+      <div class="block-title">PRODUCTION <span class="subline">${titleSuffix}</span></div>
+      <div class="rowline"><div>Material Density (t/m³)</div><div class="value">${density.toFixed(2)}</div></div>
+      <div class="rowline"><div>Truck Capacity (m³)</div><div class="value">${isFinite(volume)?volume.toFixed(1):'—'}</div></div>
+      <div class="rowline"><div>Tonnage per Truck (t/load)</div><div class="value">${isFinite(tonnesPerTruck)?tonnesPerTruck.toFixed(2):'—'}</div></div>
+      <div class="rowline"><div>Work Window</div><div class="value">${els.firstLoad.value || '—'} to ${els.lastLoad.value || '—'} (${isFinite(workHrs)?workHrs.toFixed(2):'—'} hrs)</div></div>
+      <div class="rowline"><div>Cycle Time (hrs/load)</div><div class="value">${isFinite(cycleHrs)?cycleHrs.toFixed(2):'—'} <span class="subline">(Haul + 2 × Load/Unload)</span></div></div>
+      <div class="rowline"><div>Loads per Truck / Day</div><div class="value">${isFinite(loadsPerTruckPerDay)?loadsPerTruckPerDay.toFixed(2):'—'}</div></div>
+      <div class="rowline"><div>Production per Truck / Day (t)</div><div class="value">${isFinite(tonnesPerTruckPerDay)?tonnesPerTruckPerDay.toFixed(1):'—'}</div></div>
+      <div class="rowline"><div>Daily Target (t/day)</div><div class="value">${isFinite(dailyTargetT)?dailyTargetT.toFixed(0):'—'}</div></div>
+      <div class="rowline"><div>Total # of Loads</div><div class="value">${isFinite(loadsRounded)?loadsRounded:'—'}</div></div>
+      <div class="rowline"><div>Trucks Required (for ${shared.jobDays} day target)</div><div class="value"><span class="hero">${isFinite(trucksRequired)?trucksRequired:'—'}</span></div></div>
+    `;
+
+    renderComparison();
+
+    els.truckingCosts.innerHTML = `
+      <div class="block-title">TRUCKING COSTS</div>
+      <div class="rowline"><div>Haul Rate ($/hr per truck)</div><div class="value">${fmtMoney(userRate)}</div></div>
+      <div class="rowline"><div>Total Truck Hours</div><div class="value">${isFinite(totalTruckHours)?totalTruckHours.toFixed(0):'—'}</div></div>
+      <div class="rowline"><div><strong>TOTAL HAULING COST</strong></div><div class="value"><strong>${fmtMoney(haulCost)}</strong></div></div>
+    `;
+
+    els.dumpingSummary.innerHTML = `
+      <div class="block-title">DUMPING FEES</div>
+      <div class="rowline"><div>Total # of Loads (rounded)</div><div class="value">${isFinite(loadsRounded)?loadsRounded:'—'}</div></div>
+      <div class="rowline"><div>Dump Fee ($/load)</div><div class="value">${fmtMoney(dumpFee)}</div></div>
+      <div class="rowline"><div><strong>TOTAL DUMP FEES</strong></div><div class="value"><strong>${fmtMoney(totalDumpFees)}</strong></div></div>
+    `;
+
+    const activeTruckName2 = (els.truck.options[els.truck.selectedIndex]||{}).text || '—';
+    els.dispatchSummary.innerHTML = `
+      <div class="block-title">DISPATCH SUMMARY</div>
+      <div class="rowline"><div>Material Type</div><div class="value">${(els.material.options[els.material.selectedIndex]||{}).text||'—'}</div></div>
+      <div class="rowline"><div>Truck Type</div><div class="value">${activeTruckName2}</div></div>
+      <div class="rowline"><div>First Load On Site</div><div class="value">${els.firstLoad.value || '—'}</div></div>
+      <div class="rowline"><div>Trucks Required (for ${shared.jobDays} day target)</div><div class="value"><span class="hero">${isFinite(trucksRequired)?trucksRequired:'—'}</span></div></div>
+    `;
+
+    els.grandTotals.innerHTML = `
+      <div class="rowline"><div>TOTAL MATERIAL COST</div><div class="value">${fmtMoney(totalMaterialCost)}</div></div>
+      <div class="rowline"><div>TOTAL HAULING COST</div><div class="value">${fmtMoney(haulCost)}</div></div>
+      <div class="rowline"><div>TOTAL DUMP FEES</div><div class="value">${fmtMoney(totalDumpFees)}</div></div>
+      <div class="rowline" style="font-size:1.05rem"><div><strong>GRAND TOTAL SCENARIO COST</strong></div><div class="value"><strong>${fmtMoney(grandTotal)}</strong></div></div>
+    `;
+
+    saveState();
+  }
+
+  function buildEditorTables(){
+    const matBody = els.materialsTable.querySelector('tbody'); matBody.innerHTML='';
+    const mats = [...DATA.materials, ...Array(5).fill({name:'',density:''})];
+    mats.forEach((m)=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td><input type="text" value="${m.name??''}" /></td><td><input type="number" step="0.01" value="${m.density??''}" /></td>`; matBody.appendChild(tr); });
+
+    const trkBody = els.trucksTable.querySelector('tbody'); trkBody.innerHTML='';
+    const trks = [...DATA.trucks, ...Array(5).fill({name:'',volume:'',rate:''})];
+    trks.forEach((t)=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td><input type="text" value="${t.name??''}" /></td><td><input type="number" step="0.1" value="${t.volume??''}" /></td><td><input type="number" step="0.01" value="${t.rate??''}" /></td>`; trkBody.appendChild(tr); });
+  }
+
+  function readEditorTables(){
+    const mats=[]; els.materialsTable.querySelectorAll('tbody tr').forEach(tr=>{ const [n,d]=tr.querySelectorAll('input'); const name=(n.value||'').trim(); const density=parseFloat(d.value); if(name && isFinite(density)) mats.push({name, density}); });
+    const trks=[]; els.trucksTable.querySelectorAll('tbody tr').forEach(tr=>{ const [n,v,r]=tr.querySelectorAll('input'); const name=(n.value||'').trim(); const volume=parseFloat(v.value); const rate=parseFloat(r.value); if(name && isFinite(volume)) trks.push({name, volume, rate: isFinite(rate)?rate:undefined}); });
+    return { materials:mats, trucks:trks };
+  }
+
+  function showEditor(){ buildEditorTables(); els.mainView.style.display='none'; els.editorView.style.display='block'; }
+  function showMain(){ els.editorView.style.display='none'; els.mainView.style.display='block'; calculate(); }
+
+  document.querySelectorAll('input,select').forEach(el=>{ el.addEventListener('input', ()=>{ updateInlineNotes(); calculate(); }); el.addEventListener('change', ()=>{ updateInlineNotes(); calculate(); }); });
+  document.getElementById('resetBtn').addEventListener('click', ()=>{ DATA=safeClone(DEFAULTS); saveData(DATA); refreshSelects();
+    els.quantity.value=1000; els.materialRate.value=0; els.haulRate.value=120; els.haulTime.value=1.0; els.turnTime.value=15; els.dumpFee.value=0; els.firstLoad.value='07:00'; els.lastLoad.value='16:00'; els.jobDays.value=1; calculate(); });
+  document.getElementById('printBtn').addEventListener('click', ()=> window.print());
+  document.getElementById('copyBtn').addEventListener('click', ()=>{ calculate(); const text = ['[DISPATCH SUMMARY]', els.dispatchSummary.innerText, '', '[FINAL COST SUMMARY]', els.grandTotals.innerText].join('\n'); copyText(text); });
+  document.getElementById('shareBtn').addEventListener('click', ()=>{ const params=new URLSearchParams(); ['material','truck','quantity','materialRate','haulRate','haulTime','turnTime','dumpFee','firstLoad','lastLoad','jobDays'].forEach(k=> params.set(k, els[k].value)); const url = `${location.origin}${location.pathname}?${params.toString()}`; shareLink(url); });
+
+  document.getElementById('editDataBtn').addEventListener('click', showEditor);
+  document.getElementById('backBtn').addEventListener('click', showMain);
+  document.getElementById('saveDataBtn').addEventListener('click', ()=>{ DATA = readEditorTables(); saveData(DATA); refreshSelects(); showMain(); });
+  document.getElementById('resetDataBtn').addEventListener('click', ()=>{ if(confirm('Reset defaults to All Roads presets?')){ DATA=safeClone(DEFAULTS); saveData(DATA); buildEditorTables(); refreshSelects(); calculate(); }});
+
+  refreshSelects();
+  calculate();
+
+  // Register service worker for offline + Add to Home Screen
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(()=>{}); });
+  }
+})();
+</script>
+</body>
+</html>
